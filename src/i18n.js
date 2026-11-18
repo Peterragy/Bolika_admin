@@ -210,6 +210,17 @@ Object.assign(DICT, {
   "Everything: overview, orders, products, gift sets, discounts, team and settings.": "كل شيء: النظرة العامة والطلبات والمنتجات والأطقم والخصومات والفريق والإعدادات.",
   "Products, prices and stock, gift sets, discounts and promo codes.": "المنتجات والأسعار والمخزون والأطقم والخصومات وأكواد الخصم.",
   "Orders: see them and update their status and payment.": "الطلبات: عرضها وتحديث حالتها والدفع.",
+  "Add someone to the team": "أضف عضوًا إلى الفريق", "First password": "كلمة المرور الأولى", "At least 8 characters": "8 أحرف على الأقل",
+  "Add to the team": "إضافة إلى الفريق", "Added to the team": "تمت الإضافة إلى الفريق", "New password": "كلمة مرور جديدة",
+  "New password for {e}": "كلمة مرور جديدة لـ {e}", "Save password": "حفظ كلمة المرور", "Password changed": "تم تغيير كلمة المرور",
+  "Give them their email and first password; they sign in to this dashboard with them. You can set a new password for anyone from the list.":
+    "أعطهم البريد الإلكتروني وكلمة المرور الأولى ليسجّلوا الدخول بها. يمكنك تعيين كلمة مرور جديدة لأي شخص من القائمة.",
+  "Earns {n} Bolika Circle points once paid.": "يكسب {n} نقطة في دائرة بوليكا بعد الدفع.",
+  "This order is cancelled: its items went back into stock and its points were returned.": "هذا الطلب ملغي: عادت منتجاته إلى المخزون وأُعيدت نقاطه.",
+  "Cancel order #{n}? Its items go back into stock and its points are returned. A cancelled order can't be reopened.":
+    "إلغاء الطلب رقم {n}؟ تعود منتجاته إلى المخزون وتُعاد نقاطه. لا يمكن إعادة فتح طلب ملغي.",
+  "Wrong email or password.": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "Can't reach the Bolika server. Check your connection and try again.": "تعذّر الوصول إلى خادم بوليكا. تحقق من الاتصال وحاول مرة أخرى.",
   "Access given": "تم منح الصلاحية", "Role changed": "تم تغيير الدور", "Access removed": "تمت إزالة الصلاحية",
   "Remove {e}'s access to the dashboard? Their account stays; they just can't open the dashboard.": "إزالة صلاحية {e}؟ يبقى الحساب لكن لا يمكنه فتح لوحة التحكم.",
   // settings

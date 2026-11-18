@@ -1,4 +1,4 @@
-import { sb, ok } from "../api.js";
+import { api } from "../api.js";
 import { $, esc, money, badge, STATUSES, CHANNEL_LABEL } from "../ui.js";
 import { t, locale } from "../i18n.js";
 
@@ -22,43 +22,43 @@ export default async function overview(main) {
   to.setHours(0, 0, 0, 0);
   const from = new Date(to);
   from.setDate(from.getDate() - +days);
-  const s = ok(await sb.rpc("sales_summary", { p_from: from.toISOString(), p_to: to.toISOString() }));
-  const recent = ok(await sb.from("orders").select("id, number, customer_name, total, status, created_at").order("created_at", { ascending: false }).limit(6));
+  const s = await api(`/admin/overview?days=${days}`);
+  const recent = s.recent;
 
   const tiles = [
-    [t("Revenue"), money(s.revenue), t("{m} paid", { m: money(s.paid_revenue) })],
+    [t("Revenue"), money(s.revenue), t("{m} paid", { m: money(s.paidRevenue) })],
     [t("Orders"), s.orders, t("{n} cancelled", { n: s.cancelled })],
-    [t("Average order"), money(s.avg_order), t("{n} items sold", { n: s.items })],
+    [t("Average order"), money(s.avgOrder), t("{n} items sold", { n: s.items })],
     [t("Customers"), s.customers, t("placed an order")],
   ];
   $("[data-body]", main).innerHTML = `
-    ${s.low_stock ? `<a class="alert" href="#/products?stock=low"><b>${t(s.low_stock === 1 ? "{n} item is low on stock" : "{n} items are low on stock", { n: s.low_stock })}</b><span>${t("Check stock →")}</span></a>` : ""}
+    ${s.lowStock ? `<a class="alert" href="#/products?stock=low"><b>${t(s.lowStock === 1 ? "{n} item is low on stock" : "{n} items are low on stock", { n: s.lowStock })}</b><span>${t("Check stock →")}</span></a>` : ""}
     <section class="tiles">${tiles.map(([l, v, n]) => `<div class="tile"><span>${l}</span><b>${v}</b><small>${esc(n)}</small></div>`).join("")}</section>
     <section class="card">
       <h2>${t("Revenue per day")}</h2>
-      ${chart(s.by_day, from, +days)}
+      ${chart(s.byDay, from, +days)}
     </section>
     <div class="grid2">
       <section class="card">
         <h2>${t("Orders by status")}</h2>
-        <ul class="statlist">${STATUSES.map((st) => `<li><a href="#/orders?status=${st}">${badge(st)}<b>${s.by_status[st] || 0}</b></a></li>`).join("")}</ul>
+        <ul class="statlist">${STATUSES.map((st) => `<li><a href="#/orders?status=${st}">${badge(st)}<b>${s.byStatus[st] || 0}</b></a></li>`).join("")}</ul>
       </section>
       <section class="card">
         <h2>${t("Orders by channel")}</h2>
-        <ul class="statlist">${["app", "website", "boutique"].filter((c) => c !== "boutique" || s.by_channel.boutique).map((c) => `<li><span>${CHANNEL_LABEL[c]}</span><b>${s.by_channel[c] || 0}</b></li>`).join("")}</ul>
+        <ul class="statlist">${["app", "website", "boutique"].filter((c) => c !== "boutique" || s.byChannel.boutique).map((c) => `<li><span>${CHANNEL_LABEL[c]}</span><b>${s.byChannel[c] || 0}</b></li>`).join("")}</ul>
       </section>
     </div>
     <div class="grid2 grid2--wide">
       <section class="card">
         <h2>${t("Best sellers")}</h2>
-        ${s.top_products.length ? `<table class="table"><thead><tr><th>${t("Product")}</th><th class="num">${t("Sold")}</th><th class="num">${t("Revenue")}</th></tr></thead><tbody>
-          ${s.top_products.map((p) => `<tr><td>${esc(p.name)} <small>${esc(p.size)}</small></td><td class="num">${p.qty}</td><td class="num">${money(p.revenue)}</td></tr>`).join("")}
+        ${s.topProducts.length ? `<table class="table"><thead><tr><th>${t("Product")}</th><th class="num">${t("Sold")}</th><th class="num">${t("Revenue")}</th></tr></thead><tbody>
+          ${s.topProducts.map((p) => `<tr><td>${esc(p.name)} <small>${esc(p.size)}</small></td><td class="num">${p.qty}</td><td class="num">${money(p.revenue)}</td></tr>`).join("")}
         </tbody></table>` : `<p class="muted">${t("No sales in this period yet.")}</p>`}
       </section>
       <section class="card">
         <h2>${t("Latest orders")} <a class="more" href="#/orders">${t("All orders →")}</a></h2>
         ${recent.length ? `<table class="table table--click table--cards t-latest"><tbody>${recent.map((o) => `
-          <tr data-go="#/orders/${o.id}"><td><b>#${o.number}</b></td><td>${esc(o.customer_name)}</td><td>${badge(o.status)}</td><td class="num">${money(o.total)}</td></tr>`).join("")}
+          <tr data-go="#/orders/${o.id}"><td><b>#${o.number}</b></td><td>${esc(o.customerName)}</td><td>${badge(o.status)}</td><td class="num">${money(o.total)}</td></tr>`).join("")}
         </tbody></table>` : `<p class="muted">${t("No orders yet.")}</p>`}
       </section>
     </div>`;

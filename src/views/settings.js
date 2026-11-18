@@ -1,4 +1,4 @@
-import { sb, ok } from "../api.js";
+import { api } from "../api.js";
 import { $, money, attempt, field } from "../ui.js";
 import { t } from "../i18n.js";
 
@@ -6,7 +6,9 @@ import { t } from "../i18n.js";
    Checkout (place_order in the database) charges with these, so the app and this page agree. */
 
 export default async function settings(main) {
-  const s = ok(await sb.from("settings").select("*").single());
+  const r = await api("/admin/settings");
+  // the field names this page uses
+  const s = { shipping_fee: r.shippingFee, free_shipping_over: r.freeShippingOver, egp_per_point: r.egpPerPoint, redeem_points: r.redeemPoints, redeem_value: r.redeemValue, welcome_points: r.welcomePoints };
   main.innerHTML = `
     <header class="head"><div><h1>${t("Settings")}</h1><p class="sub">${t("Used by checkout in the app and on the website.")}</p></div></header>
     <form class="grid2" data-form>
@@ -47,9 +49,9 @@ export default async function settings(main) {
     e.preventDefault();
     const v = (n) => +form[n].value;
     const row = {
-      shipping_fee: v("shipping_fee"), free_shipping_over: form.free_shipping_over.value === "" ? null : v("free_shipping_over"),
-      egp_per_point: v("egp_per_point"), welcome_points: v("welcome_points"), redeem_points: v("redeem_points"), redeem_value: v("redeem_value"),
+      shippingFee: v("shipping_fee"), freeShippingOver: form.free_shipping_over.value === "" ? null : v("free_shipping_over"),
+      egpPerPoint: v("egp_per_point"), welcomePoints: v("welcome_points"), redeemPoints: v("redeem_points"), redeemValue: v("redeem_value"),
     };
-    await attempt(() => sb.from("settings").update(row).eq("id", true).then(ok), t("Settings saved"));
+    await attempt(() => api("/admin/settings", { method: "PUT", body: row }), t("Settings saved"));
   };
 }

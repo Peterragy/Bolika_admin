@@ -1,4 +1,4 @@
-import { sb, ok, img } from "../api.js";
+import { api, img, loadCatalog } from "../api.js";
 import { $, $$, esc, money, date, localInput, attempt, modal, field } from "../ui.js";
 import { t, ar } from "../i18n.js";
 
@@ -11,12 +11,13 @@ const stateOf = (d, now = Date.now()) => (now < new Date(d.starts_at) ? "schedul
 const LABEL = { running: t("Running"), scheduled: t("Scheduled"), ended: t("Ended") };
 
 export default async function discounts(main) {
-  const [list, prods, sets, codes] = await Promise.all([
-    sb.from("discounts").select("*, products(*), bundles(*)").order("starts_at", { ascending: false }).then(ok),
-    sb.from("products").select("*").order("sort").then(ok),
-    sb.from("bundles").select("*").order("sort").then(ok),
-    sb.from("promo_codes").select("*").order("created_at", { ascending: false }).then(ok),
-  ]);
+  const [{ discounts: raw, promoCodes }, { prods, bundles: sets }] = await Promise.all([api("/admin/discounts"), loadCatalog()]);
+  // the field names this page uses
+  const list = raw.map((d) => {
+    const x = d.target && { ...d.target, name_ar: d.target.nameAr };
+    return { id: d.id, percent: d.percent, starts_at: d.startsAt, ends_at: d.endsAt, products: d.kind === "product" ? x : null, bundles: d.kind === "bundle" ? x : null };
+  });
+  const codes = promoCodes.map((c) => ({ code: c.code, percent: c.percent, min_order: c.minOrder, max_uses: c.maxUses, uses: c.uses, starts_at: c.startsAt, ends_at: c.endsAt, active: c.active }));
   const reload = () => discounts(main);
   const order = { running: 0, scheduled: 1, ended: 2 };
   list.sort((a, b) => order[stateOf(a)] - order[stateOf(b)]);
@@ -113,21 +114,22 @@ function edit(d, prods, sets, reload) {
   }
   $("[data-del]", dlg)?.addEventListener("click", async () => {
     if (!confirm(t("Delete this discount? It goes back to its normal price."))) return;
-    await attempt(() => sb.from("discounts").delete().eq("id", d.id).then(ok), t("Discount deleted"));
+    await attempt(() => api(`/admin/discounts/${d.id}`, { method: "DELETE" }), t("Discount deleted"));
     dlg.close();
     reload();
   });
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const row = { percent: +form.percent.value, starts_at: new Date(form.starts_at.value).toISOString(), ends_at: new Date(form.ends_at.value).toISOString() };
-    if (new Date(row.ends_at) <= new Date(row.starts_at)) return alert(t("The end must be after the start."));
+    const row = { percent: +form.percent.value, startsAt: new Date(form.starts_at.value).toISOString(), endsAt: new Date(form.ends_at.value).toISOString() };
+    if (new Date(row.endsAt) <= new Date(row.startsAt)) return alert(t("The end must be after the start."));
     if (d) {
-      await attempt(() => sb.from("discounts").update(row).eq("id", d.id).then(ok), t("Saved"));
+      await attempt(() => api(`/admin/discounts/${d.id}`, { method: "PUT", body: row }), t("Saved"));
     } else {
       const ids = $$(".pick input:checked", dlg).map((c) => c.value.split(":"));
       if (!ids.length) return alert(t("Choose at least one product or gift set."));
-      const rows = ids.map(([kind, id]) => ({ ...row, [kind === "bundle" ? "bundle_id" : "product_id"]: id }));
-      await attempt(() => sb.from("discounts").insert(rows).then(ok), t(rows.length === 1 ? "Discount added to {n} item" : "Discount added to {n} items", { n: rows.length }));
+      const rows = ids;
+      const body = { ...row, productIds: ids.filter(([k]) => k === "product").map(([, id]) => id), bundleIds: ids.filter(([k]) => k === "bundle").map(([, id]) => id) };
+      await attempt(() => api("/admin/discounts", { method: "POST", body }), t(rows.length === 1 ? "Discount added to {n} item" : "Discount added to {n} items", { n: rows.length }));
     }
     dlg.close();
     reload();
@@ -151,19 +153,19 @@ function editCode(c, reload) {
   form.code.oninput = () => (form.code.value = form.code.value.toUpperCase().replace(/\s/g, ""));
   $("[data-del]", dlg)?.addEventListener("click", async () => {
     if (!confirm(t("Delete the code {c}? It stops working at checkout straight away.", { c: c.code }))) return;
-    await attempt(() => sb.from("promo_codes").delete().eq("code", c.code).then(ok), t("Promo code deleted"));
+    await attempt(() => api(`/admin/promo-codes/${encodeURIComponent(c.code)}`, { method: "DELETE" }), t("Promo code deleted"));
     dlg.close();
     reload();
   });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const row = {
-      percent: +form.percent.value, min_order: +form.min_order.value || 0, max_uses: form.max_uses.value === "" ? null : +form.max_uses.value,
-      starts_at: new Date(form.starts_at.value).toISOString(), ends_at: form.ends_at.value ? new Date(form.ends_at.value).toISOString() : null,
+      percent: +form.percent.value, minOrder: +form.min_order.value || 0, maxUses: form.max_uses.value === "" ? null : +form.max_uses.value,
+      startsAt: new Date(form.starts_at.value).toISOString(), endsAt: form.ends_at.value ? new Date(form.ends_at.value).toISOString() : null,
       active: form.active.checked,
     };
-    if (row.ends_at && new Date(row.ends_at) <= new Date(row.starts_at)) return alert(t("The end must be after the start."));
-    await attempt(() => (c ? sb.from("promo_codes").update(row).eq("code", c.code) : sb.from("promo_codes").insert({ ...row, code: form.code.value })).then(ok),
+    if (row.endsAt && new Date(row.endsAt) <= new Date(row.startsAt)) return alert(t("The end must be after the start."));
+    await attempt(() => (c ? api(`/admin/promo-codes/${encodeURIComponent(c.code)}`, { method: "PUT", body: row }) : api("/admin/promo-codes", { method: "POST", body: { ...row, code: form.code.value } })),
       c ? t("Saved") : t("Promo code added"));
     dlg.close();
     reload();

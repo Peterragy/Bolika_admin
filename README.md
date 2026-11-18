@@ -1,13 +1,14 @@
 # Bolika — dashboard
 
 The staff dashboard for **Bolika**: follow the business, run the catalogue and handle orders.
-Built the same way as the John France dashboard (Vite + [Supabase](https://supabase.com), no framework),
+Built like the John France dashboard (Vite, no framework) and talks to the
+[Bolika server](https://github.com/Peterragy/Bolika_server) (AdonisJS + Prisma + MongoDB),
 in Bolika's plum, aubergine, violet and blush with the BOLIKA wordmark and BB monogram, in English and Arabic.
 
 ## Who sees what
 
 Every staff member signs in with their own email and password. Their **role** decides the pages they
-get, and the database enforces the same rules on every request (whichever app sends it).
+get, and the server enforces the same rules on every request (whichever app sends it).
 
 | Page | Admin | Inventory manager | Sales manager |
 | --- | :-: | :-: | :-: |
@@ -22,54 +23,39 @@ get, and the database enforces the same rules on every request (whichever app se
 Cancelling an order puts its items back in stock; un-cancelling takes them again. Selling a gift set
 takes the set's stock and the stock of every product in it.
 
-## The database
+## The server
 
-`supabase/migrations/20261118000000_bolika.sql` is the shared Bolika backend: catalogue
-(categories, products, shades/sizes, gift sets), discounts and promo codes, staff roles, orders with
-Paymob payment fields, stock, and the security rules. `place_order()` prices a bag on the server
-(sale prices, promo code, points, delivery) and takes stock; the mobile app and the website will call it
-when they move from their local catalogue to this database.
+Everything (catalogue, gift sets, discounts, staff, orders, stock, Paymob payments) lives on the Bolika
+server, shared with the mobile app. This dashboard only calls its `/api/admin/...` addresses with the
+signed-in staff member's token (`src/api.js`).
 
 ## Run it locally
 
-Needs Docker Desktop running.
+Start the server first (see its README: Docker MongoDB, `npm run db:demo`, `npm run dev` on port 3340), then:
 
 ```bash
 npm install
-npx supabase start      # local database with the schema and supabase/seed.sql
 npm run dev             # http://localhost:5191
 ```
 
-Put the local `API URL` and `anon key` from `npx supabase status` into `.env.local`:
+`.env.local` points at the server (this is the default, so it's optional):
 
 ```
-VITE_SUPABASE_URL=http://127.0.0.1:55321
-VITE_SUPABASE_ANON_KEY=...
+VITE_API_URL=http://localhost:3340
 ```
 
-The seed loads the app's catalogue, three gift sets, a running discount, two promo codes, ~30 sample
-orders and **local-only** staff accounts (password `bolika-local-only`):
+The server's demo seed has **local-only** staff accounts (password `bolika-local-only`):
 `admin@bolika.local`, `inventory@bolika.local`, `sales@bolika.local`.
-The seed never runs on the live project. `npx supabase db reset` starts the local data over.
 
 ## Go live
 
-1. Create a Supabase project. Run the migration on it (`npx supabase link` then `npx supabase db push`,
-   or paste the SQL into the SQL editor).
-2. Create the first admin: Supabase → Authentication → Users → **Add user** (email + password,
-   *Auto confirm*), then in the SQL editor:
+1. Put the server online and create the first admin there:
+   `node ace bolika:seed --admin you@bolika.com`. Everyone else is added from the **Team** page.
+2. **Vercel:** import this repo (framework Vite, build `npm run build`, output `dist`) and set
+   `VITE_API_URL` to the server's address.
+3. Add the dashboard's address to the server's `CORS_ORIGIN`.
 
-   ```sql
-   update public.profiles set role = 'admin' where email = 'you@bolika.com';
-   ```
-
-   Everyone after that: add the user the same way, then give them a role on the **Team** page.
-3. **Vercel:** import this repo (framework Vite, build `npm run build`, output `dist`), add
-   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and, if product photos are saved as paths on the
-   website, `VITE_SITE_URL`. Add the dashboard's URL to Supabase → Authentication → URL Configuration.
-
-The anon key is public by design; the database rules decide what each account can do. Never put the
-**service_role** key in this app.
+No secret keys live in this app; the server decides what each account can do.
 
 ---
 

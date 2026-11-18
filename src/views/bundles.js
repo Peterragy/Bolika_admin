@@ -1,4 +1,4 @@
-import { sb, ok, img, uploadImage } from "../api.js";
+import { api, img, uploadImage, loadCatalog } from "../api.js";
 import { $, $$, esc, money, attempt, modal, field, stockCell } from "../ui.js";
 import { t, ar } from "../i18n.js";
 
@@ -6,18 +6,11 @@ import { t, ar } from "../i18n.js";
    at one price. Selling a set takes its own stock and the stock of each product in it. */
 
 export default async function bundles(main) {
-  const [sets, items, prods, vars, live] = await Promise.all([
-    sb.from("bundles").select("*").order("sort").then(ok),
-    sb.from("bundle_items").select("*").then(ok),
-    sb.from("products").select("id, name, name_ar, size, image, price, active").order("sort").then(ok),
-    sb.from("product_variants").select("id, product_id, label, kind, price, stock").order("sort").then(ok),
-    sb.from("discounts").select("bundle_id, percent, starts_at, ends_at").not("bundle_id", "is", null).then(ok),
-  ]);
+  const { bundles: sets, items, prods, vars } = await loadCatalog();
   const prodById = new Map(prods.map((p) => [p.id, p]));
   const varById = new Map(vars.map((v) => [v.id, v]));
   const itemsOf = (id) => items.filter((i) => i.bundle_id === id);
-  const now = Date.now();
-  const saleOf = (id) => Math.max(0, ...live.filter((d) => d.bundle_id === id && now >= new Date(d.starts_at) && now < new Date(d.ends_at)).map((d) => +d.percent));
+  const saleOf = (id) => sets.find((s) => s.id === id)?.discount_percent || 0;
   // what the items cost bought one by one
   const worth = (id) => itemsOf(id).reduce((n, i) => n + i.qty * Math.ceil(varById.get(i.variant_id)?.price ?? prodById.get(i.product_id)?.price ?? 0), 0);
   const reload = () => bundles(main);
@@ -55,7 +48,7 @@ export default async function bundles(main) {
     edit(sets.find((s) => s.id === c.dataset.edit), itemsOf(c.dataset.edit), { prods, vars, reload });
   }));
   $$("[data-active]", main).forEach((cb) => (cb.onchange = async () => {
-    await attempt(() => sb.from("bundles").update({ active: cb.checked }).eq("id", cb.dataset.active).then(ok), cb.checked ? t("Shown in the shop") : t("Hidden from the shop"));
+    await attempt(() => api(`/admin/bundles/${cb.dataset.active}/active`, { method: "PATCH", body: { active: cb.checked } }), cb.checked ? t("Shown in the shop") : t("Hidden from the shop"));
     cb.closest(".setcard").classList.toggle("is-off", !cb.checked);
   }));
 }
@@ -135,7 +128,7 @@ function edit(s, items, { prods, vars, reload }) {
 
   $("[data-del]", dlg)?.addEventListener("click", async () => {
     if (!confirm(t("Delete the gift set “{name}”? Past orders keep their copy of it.", { name: s.name }))) return;
-    await attempt(() => sb.from("bundles").delete().eq("id", s.id).then(ok), t("Gift set deleted"));
+    await attempt(() => api(`/admin/bundles/${s.id}`, { method: "DELETE" }), t("Gift set deleted"));
     dlg.close();
     reload();
   });
@@ -152,12 +145,12 @@ function edit(s, items, { prods, vars, reload }) {
       product_id: $("[name=b_product]", r).value, variant_id: $("[name=b_variant]", r).value || null, qty: +$("[name=b_qty]", r).value || 1,
     })).filter((l) => l.product_id);
     if (!lines.length) return alert(t("Add at least one product to the set."));
-    await attempt(async () => {
-      const saved = s ? ok(await sb.from("bundles").update(row).eq("id", s.id).select().single())
-                      : ok(await sb.from("bundles").insert(row).select().single());
-      ok(await sb.from("bundle_items").delete().eq("bundle_id", saved.id));
-      ok(await sb.from("bundle_items").insert(lines.map((l) => ({ ...l, bundle_id: saved.id }))));
-    }, s ? t("Saved") : t("Gift set added"));
+    const body = {
+      name: row.name, nameAr: row.name_ar, description: row.description, descriptionAr: row.description_ar, image: row.image,
+      price: row.price, stock: row.stock, active: row.active,
+      items: lines.map((l) => ({ productId: l.product_id, variantId: l.variant_id, qty: l.qty })),
+    };
+    await attempt(() => api(s ? `/admin/bundles/${s.id}` : "/admin/bundles", { method: s ? "PUT" : "POST", body }), s ? t("Saved") : t("Gift set added"));
     dlg.close();
     reload();
   };

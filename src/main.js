@@ -1,6 +1,6 @@
 import { t, langButton } from "./i18n.js"; // first: sets the language and direction
 import "./admin.css";
-import { sb, configured, ok } from "./api.js";
+import { api, configured, login as signIn, logout, signedIn, whenSignedOut } from "./api.js";
 import { $, $$, esc, ROLE_LABEL } from "./ui.js";
 import overview from "./views/overview.js";
 import orders from "./views/orders.js";
@@ -10,8 +10,8 @@ import discounts from "./views/discounts.js";
 import team from "./views/team.js";
 import settings from "./views/settings.js";
 
-/* Bolika dashboard. Staff sign in with email + password; their profile's role
-   decides which pages they get (the database enforces the same rules):
+/* Bolika dashboard. Staff sign in with email + password; their role decides which
+   pages they get (the Bolika server enforces the same rules on every request):
      admin      — everything
      inventory  — products, gift sets, discounts
      sales      — orders                                                     */
@@ -28,28 +28,26 @@ const VIEWS = [
 let views = VIEWS; // what the signed-in account may open
 const app = $("#app");
 
-if (!configured) {
-  app.innerHTML = `<div class="gate"><div class="gate__card"><img src="/brand/wordmark-noir.svg" alt="Bolika" class="gate__word" /><h1>${t("Not connected")}</h1>
-    <p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env.local</code> (and to the project's environment variables on Vercel), then reload.</p></div></div>`;
-} else {
-  sb.auth.onAuthStateChange((event, session) => {
-    if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "SIGNED_OUT") setTimeout(() => gate(session?.user));
-  });
-}
-
 let shown = null;
-async function gate(user) {
-  if (!user) { shown = null; return login(); }
-  if (shown === user.id) return;
-  const profile = ok(await sb.from("profiles").select("full_name, role").eq("id", user.id).single());
-  views = VIEWS.filter((v) => v[4].includes(profile.role));
+whenSignedOut(() => { shown = null; login(); });
+if (configured) gate();
+
+async function gate() {
+  if (!signedIn()) { shown = null; return login(); }
+  let me;
+  try {
+    me = await api("/admin/me");
+  } catch (e) {
+    return login(e.message);
+  }
+  views = VIEWS.filter((v) => v[4].includes(me.role));
   if (!views.length) {
-    await sb.auth.signOut();
+    logout();
     return login(t("This account can't open the dashboard."));
   }
-  document.documentElement.dataset.role = profile.role;
-  shown = user.id;
-  layout(profile.full_name || user.email, profile.role);
+  document.documentElement.dataset.role = me.role;
+  shown = me.id;
+  layout(me.fullName || me.email, me.role);
   route();
 }
 
@@ -70,11 +68,17 @@ function login(error = "") {
   const form = $("[data-form]");
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const { error } = await sb.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value });
-    if (error) {
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      await signIn(form.email.value.trim(), form.password.value);
+      gate();
+    } catch (error) {
       const m = $("[data-msg]");
       m.hidden = false;
-      m.textContent = error.message === "Invalid login credentials" ? t("Wrong email or password.") : error.message;
+      m.textContent = t(error.message);
+    } finally {
+      button.disabled = false;
     }
   };
 }
@@ -91,7 +95,7 @@ function layout(name, role) {
       </aside>
       <main class="main" data-main></main>
     </div>`;
-  $("[data-out]").onclick = () => sb.auth.signOut();
+  $("[data-out]").onclick = () => logout();
 }
 
 async function route() {

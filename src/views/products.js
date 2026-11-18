@@ -1,4 +1,4 @@
-import { sb, ok, img, uploadImage } from "../api.js";
+import { api, img, uploadImage, loadCatalog } from "../api.js";
 import { $, $$, esc, money, attempt, modal, field, stockCell } from "../ui.js";
 import { t, ar } from "../i18n.js";
 
@@ -6,12 +6,8 @@ import { t, ar } from "../i18n.js";
    with a photo, and shades or sizes that each carry their own price and stock. */
 
 export default async function products(main, _id, query) {
-  const [cats, prods, vars, live] = await Promise.all([
-    sb.from("categories").select("*").order("sort").then(ok),
-    sb.from("products").select("*").order("sort").then(ok),
-    sb.from("product_variants").select("*").order("sort").then(ok),
-    sb.from("shop_products").select("id, discount_percent").not("discount_percent", "is", null).then(ok),
-  ]);
+  const { cats, prods, vars } = await loadCatalog();
+  const live = prods.filter((p) => p.discount_percent);
   const catById = new Map(cats.map((c) => [c.id, c]));
   const varsOf = vars.reduce((m, v) => m.set(v.product_id, [...(m.get(v.product_id) || []), v]), new Map());
   const sale = new Map(live.map((p) => [p.id, +p.discount_percent]));
@@ -76,7 +72,7 @@ export default async function products(main, _id, query) {
     edit(p, varsOf.get(p.id) || [], { cats, reload });
   }));
   $$("[data-active]", main).forEach((cb) => (cb.onchange = async () => {
-    await attempt(() => sb.from("products").update({ active: cb.checked }).eq("id", cb.dataset.active).then(ok), cb.checked ? t("Shown in the shop") : t("Hidden from the shop"));
+    await attempt(() => api(`/admin/products/${cb.dataset.active}/active`, { method: "PATCH", body: { active: cb.checked } }), cb.checked ? t("Shown in the shop") : t("Hidden from the shop"));
     cb.closest("tr").classList.toggle("is-off", !cb.checked);
   }));
   function reload() { products(main, null, query); }
@@ -161,7 +157,7 @@ function edit(p, vars, { cats, reload }) {
 
   $("[data-del]", dlg)?.addEventListener("click", async () => {
     if (!confirm(t("Delete “{name}”? Past orders keep their copy of it. To take it off the shop for now, hide it instead.", { name: p.name }))) return;
-    await attempt(() => sb.from("products").delete().eq("id", p.id).then(ok), t("Product deleted"));
+    await attempt(() => api(`/admin/products/${p.id}`, { method: "DELETE" }), t("Product deleted"));
     dlg.close();
     reload();
   });
@@ -178,22 +174,18 @@ function edit(p, vars, { cats, reload }) {
       active: f.get("active") === "true", bestseller: f.get("bestseller") === "on",
       description: str("description"), description_ar: str("description_ar"), image,
     };
-    await attempt(async () => {
-      const saved = p ? ok(await sb.from("products").update(row).eq("id", p.id).select().single())
-                      : ok(await sb.from("products").insert(row).select().single());
-      // options: replace the set with what's in the form
-      const rows = $$(".var:not(.var--head)", varBox).map((r, i) => ({
-        ...(r.dataset.var ? { id: r.dataset.var } : {}),
-        product_id: saved.id, kind: r.dataset.kind, label: $("[name=v_label]", r).value.trim(), label_ar: $("[name=v_label_ar]", r).value.trim() || null,
-        color: $("[name=v_color]", r)?.value || null, price: num($("[name=v_price]", r).value), stock: num($("[name=v_stock]", r).value), sort: i,
-      }));
-      const keep = rows.filter((r) => r.id).map((r) => r.id);
-      const gone = vars.filter((v) => !keep.includes(v.id)).map((v) => v.id);
-      if (gone.length) ok(await sb.from("product_variants").delete().in("id", gone));
-      const existing = rows.filter((r) => r.id), fresh = rows.filter((r) => !r.id);
-      if (existing.length) ok(await sb.from("product_variants").upsert(existing));
-      if (fresh.length) ok(await sb.from("product_variants").insert(fresh));
-    }, p ? t("Saved") : t("Product added"));
+    // shades and sizes: the server replaces the set with what's in the form
+    const variants = $$(".var:not(.var--head)", varBox).map((r) => ({
+      ...(r.dataset.var ? { id: r.dataset.var } : {}),
+      kind: r.dataset.kind, label: $("[name=v_label]", r).value.trim(), labelAr: $("[name=v_label_ar]", r).value.trim() || null,
+      color: $("[name=v_color]", r)?.value || null, price: num($("[name=v_price]", r).value), stock: num($("[name=v_stock]", r).value),
+    }));
+    const body = {
+      name: row.name, nameAr: row.name_ar, subtitle: row.subtitle, subtitleAr: row.subtitle_ar, categoryId: row.category_id || null,
+      brand: row.brand, size: row.size, sku: row.sku, price: row.price, stock: row.stock, lowStock: row.low_stock,
+      active: row.active, bestseller: row.bestseller, description: row.description, descriptionAr: row.description_ar, image: row.image, variants,
+    };
+    await attempt(() => api(p ? `/admin/products/${p.id}` : "/admin/products", { method: p ? "PUT" : "POST", body }), p ? t("Saved") : t("Product added"));
     dlg.close();
     reload();
   };
